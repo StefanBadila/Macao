@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
-import { QRCodeSVG } from "qrcode.react";
 import { useLocation } from "react-router-dom";
 
-const socket = io("localhost:5000"); 
+import RoomControl from "./components/RoomControl";
+import HostView from "./components/HostView";
+import JoinRoom from "./components/JoinRoom";
+import PlayerView from "./components/PlayerView";
+import HostGameView from "./components/HostGameView";
+import PlayerGameView from "./components/PlayerGameView";
+
+export const socket = io("192.168.0.199:5000"); 
 
 function useQuery() {
   return new URLSearchParams(useLocation().search);
@@ -20,84 +26,156 @@ function App() {
   const [isHost, setIsHost] = useState(false);
   const [lanIp, setLanIp] = useState("");
 
-  // Fetch LAN IP from backend
+  
   useEffect(() => {
     fetch("http://localhost:5000/api/lan-ip")
       .then(res => res.json())
       .then(data => setLanIp(data.ip));
   }, []);
-  
-  // Listen for server events
+
+  // Game state
+  const [gameStarted, setGameStarted] = useState(false);
+  const [playerHand, setPlayerHand] = useState([]);
+  const [hostCounts, setHostCounts] = useState([]);
+  const [hostHand, setHostHand] = useState([]);
+  const [currentTurn, setCurrentTurn] = useState(null);
+
+  // Socket listeners
   useEffect(() => {
     socket.on("roomCreated", (code) => {
       setRoomCode(code);
       setIsHost(true);
     });
 
-    socket.on("playerList", (players) => setPlayers(players));
-    socket.on("errorMessage", (msg) => alert(msg));
+    socket.on("playerList", (players) =>{ 
+      setPlayers(players);
+      if (players.some((p) => p.id === socket.id)) {
+      setJoined(true);
+    }
+    });
+    socket.on("errorMessage", (msg) => {
+      alert(msg)
+      setPlayerName("");
+      setJoined(false);
+    });
+
+
+    socket.on("gameStartedHost", ({ counts, hostHand, currentTurn }) => {
+      setGameStarted(true);
+      setHostCounts(counts);
+      setHostHand(hostHand);
+      setCurrentTurn(currentTurn);
+    });
+
+    socket.on("gameStartedPlayer", ({ hand, currentTurn }) => {
+      setGameStarted(true);
+      setPlayerHand(hand);
+      setCurrentTurn(currentTurn);
+    });
+
+    socket.on("gameState", ({ topCard, hands }) => {
+      
+      const hostId = players[0]?.id; // safe check for host
+      if (isHost) {
+        // Update host hand
+        if (hands[hostId]) 
+          setHostHand(hands[hostId]);
+          // Update counts for all players
+          setHostCounts(
+            Object.keys(hands).map((id) => ({
+              id,
+              name: id === hostId ? "Host" : players.find((p) => p.id === id)?.name,
+              cardCount: hands[id].length,
+            }))
+          );
+      }
+      else {
+        // Update only this player's hand
+        setPlayerHand(hands[socket.id] || []);
+      }
+      console.log("Top card:", topCard);
+      console.log("Hands:", hands);
+    });
+    socket.on("turnUpdate", ({ currentTurn }) => {
+      setCurrentTurn(currentTurn);
+    });
+
 
     return () => {
       socket.off("roomCreated");
       socket.off("playerList");
       socket.off("errorMessage");
+      socket.off("gameStartedHost");
+      socket.off("gameStartedPlayer");
+      socket.off("gameState");
+      socket.off("currentTurn");
     };
-  }, []);
+  }, [isHost, players]);
 
+
+  // Create / join room
   const createRoom = () => socket.emit("createRoom");
-  const joinRoom = () => { 
-    socket.emit("joinRoom", { roomCode, playerName }); 
-    setJoined(true); 
+  const joinRoom = () => {
+    socket.emit("joinRoom", { roomCode, playerName });
+  };
+
+  // Start game (host only)
+  const startGame = () => {
+    if (players.length < 2) {
+      alert("At least 2 players are required to start the game!");
+      return;
+    }
+    socket.emit("startGame", { roomCode });
   };
 
   return (
     <div style={{ padding: 20 }}>
       <h1>Macao MVP</h1>
+      {/* Room creation */}
+      {!roomCode && <RoomControl createRoom={createRoom} />}
 
-      {/* Host view */}
-      {!roomCode && <button onClick={createRoom}>Create Room (Host)</button>}
-
-      {roomCode && (
-        <div>
-          <div>
-            <h2>Room Code: {roomCode}</h2>
-            <p>Share this code with your friends:</p>
-            <strong>{roomCode}</strong>
-            <button onClick={() => navigator.clipboard.writeText(roomCode)}>Copy Code</button>
-            <div style={{ marginTop: 20 }}>
-              <p>LAN IP: {lanIp}</p>
-              {lanIp && <QRCodeSVG value={`http://${lanIp}:3000/?room=${roomCode}`} />}
-            </div>
-          </div>
-
-          <h3>Players:</h3>
-          <ul>{players.map((p) => <li key={p.id}>{p.name}</li>)}</ul>
-        </div>
+      {/* Host view before game starts */}
+      {!gameStarted && isHost && roomCode && (
+        <HostView
+          roomCode={roomCode}
+          lanIp={lanIp}
+          players={players}
+          startGame={startGame}
+        />
       )}
 
-      <hr />
+      {/* Player view before game starts */}
+      {!gameStarted && !isHost && joined && (
+        <PlayerView
+          playerName={playerName}
+          players={players}
+        />
+      )}
 
-      {/* Player view */}
+      {/* Join form if not host and not joined */}
       {!isHost && !joined && (
-        <div>
-          <h2>Join a Room</h2>
-          <input
-            type="text"
-            placeholder="Room Code"
-            value={roomCode || ""}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-          />
-          <input
-            type="text"
-            placeholder="Your Name"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-          />
-          <button onClick={joinRoom}>Join</button>
-        </div>
+        <JoinRoom
+          roomCode={roomCode}
+          setRoomCode={setRoomCode}
+          playerName={playerName}
+          setPlayerName={setPlayerName}
+          joinRoom={joinRoom}
+        />
       )}
 
-      {joined && <h3>Welcome, {playerName}!</h3>}
+      {/* Game views */}
+     {gameStarted && isHost && (
+        <HostGameView
+          counts={hostCounts}
+          hostHand={hostHand}
+          roomCode={roomCode}
+          players={players}
+          currentTurn={currentTurn}
+        />
+)}
+      {gameStarted && !isHost && (
+        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} />
+      )}
     </div>
   );
 }

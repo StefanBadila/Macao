@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 
-function HostGameView({ counts, hostHand, roomCode, players, currentTurn }) {
+function HostGameView({ counts, hostHand, roomCode, players, currentTurn, currentSuit }) {
   // Extract top card and last 5 previous
   const topCard = hostHand.length > 0 ? hostHand[hostHand.length - 1] : null;
   const lastFive = useMemo(() => {
@@ -16,12 +16,24 @@ function HostGameView({ counts, hostHand, roomCode, players, currentTurn }) {
       {/* Top card */}
       <h3>Top Card on Stack:</h3>
       {topCard ? (
-        <img
-          src={topCard.image}
-          alt={topCard.code}
-          width={100}
-          style={{ border: "3px solid red", marginBottom: 20 }}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img
+            src={topCard.image}
+            alt={topCard.code}
+            width={100}
+            style={{ border: "3px solid red", marginBottom: 20 }}
+          />
+          {currentSuit && currentSuit !== topCard.suit && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <p style={{ margin: 0 }}>Next suit:</p>
+              <img
+                src={`${process.env.PUBLIC_URL}/Suit${currentSuit.toLowerCase()}.png`} 
+                alt={currentSuit}
+                width={40}
+              />
+            </div>
+          )}
+        </div>
       ) : (
         <p>No card played yet</p>
       )}
@@ -30,14 +42,10 @@ function HostGameView({ counts, hostHand, roomCode, players, currentTurn }) {
       <h4>Previous 5 cards:</h4>
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
         {lastFive.map((card, i) => (
-          <img
-            key={i}
-            src={card.image}
-            alt={card.code}
-            width={60}
-          />
+          <img key={i} src={card.image} alt={card.code} width={60} />
         ))}
       </div>
+
       {/* Other players card counts */}
       <h3>Other Players and number of cards:</h3>
       <ul>

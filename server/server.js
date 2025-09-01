@@ -12,6 +12,37 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
+
+// Debug helper: add 3 sixes to first non-host player
+function giveFirstPlayerThreesixes(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  const firstPlayer = room.players.find(p => p.id !== room.host);
+  if (!firstPlayer) return;
+
+  // Create 3 fake cards with value "6" and different suits
+  const sixCards = [
+    { code: `6H-${Date.now()}`, value: "6", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/6H.png" },
+    { code: `6D-${Date.now()+1}`, value: "6", suit: "DIAMONDS", image: "https://deckofcardsapi.com/static/img/6D.png" },
+    { code: `6S-${Date.now()+2}`, value: "6", suit: "SPADES", image: "https://deckofcardsapi.com/static/img/6S.png" },
+    { code: `AH-${Date.now()+3}`, value: "ACE", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/AH.png"},
+    { code: `AS-${Date.now()+4}`, value: "ACE", suit: "SPADES", image: "https://deckofcardsapi.com/static/img/AH.png"}
+  ];
+
+  if (!room.hands[firstPlayer.id]) room.hands[firstPlayer.id] = [];
+  room.hands[firstPlayer.id].push(...sixCards);
+
+  console.log(`Added 3 sixes to ${firstPlayer.name}`);
+  io.to(roomCode).emit("gameState", {
+    topCard: room.hands[room.host][room.hands[room.host].length - 1],
+    hands: room.hands,
+    
+  });
+}
+
+
+
 // Get local IP
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -132,7 +163,7 @@ io.on("connection", (socket) => {
           currentTurn: room.currentTurn,
         });
       });
-
+      giveFirstPlayerThreesixes(roomCode); // replace ABCD with your room code
       console.log("Game started in room:", roomCode);
       console.log("Hands:", room.hands);
       console.log("Next turn: ", room.currentTurn);
@@ -170,53 +201,68 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("playCard", ({ roomCode, cardCode }) => {
-    const room = rooms[roomCode];
-    if (!room) {
-      socket.emit("errorMessage", "Room not found");
-      return;
+
+  socket.on("playCard", ({ roomCode, cardCode, chosenSuit }) => {
+  const room = rooms[roomCode];
+  if (!room) return socket.emit("errorMessage", "Room not found");
+
+  const player = room.players.find(p => p.id === socket.id);
+  if (!player) return socket.emit("errorMessage", "You are not in this room");
+  if (room.currentTurn !== socket.id) return socket.emit("errorMessage", "Not your turn!");
+
+  const cardIndex = room.hands[socket.id].findIndex(c => c.code === cardCode);
+  if (cardIndex === -1) return socket.emit("errorMessage", "Card not in hand");
+
+  const playedCard = room.hands[socket.id][cardIndex];
+
+  // Initialize currentSuit if it doesn't exist
+  if (!room.currentSuit && room.hands[room.host].length > 0) {
+    const topCard = room.hands[room.host][room.hands[room.host].length - 1];
+    room.currentSuit = topCard.suit;
+  }
+
+  // Check legality: Ace can always be played
+  if (playedCard.value !== "ACE") {
+    const topCard = room.hands[room.host][room.hands[room.host].length - 1];
+    if (playedCard.suit !== room.currentSuit && playedCard.value !== topCard.value) {
+      return socket.emit("errorMessage", "Invalid move: must match suit or rank of top card");
     }
+  }
 
-    // 1. Check if player is in room && if it is player turn 
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) {
-      socket.emit("errorMessage", "You are not in this room");
-      return;
+  // Remove card from player's hand
+  room.hands[socket.id].splice(cardIndex, 1);
+
+  // Add to host's hand (discard pile)
+  if (!room.hands[room.host]) room.hands[room.host] = [];
+  room.hands[room.host].push(playedCard);
+
+  // Update currentSuit if Ace is played
+  if (playedCard.value === "ACE") {
+    if (!chosenSuit || !["HEARTS","DIAMONDS","CLUBS","SPADES"].includes(chosenSuit)) {
+      return socket.emit("errorMessage", "You must choose a valid suit for the Ace");
     }
-    if (room.currentTurn !== socket.id) {
-      socket.emit("errorMessage", "Not your turn!");
-      return;
-    }
+    room.currentSuit = chosenSuit;
+  } else {
+    room.currentSuit = playedCard.suit;
+  }
 
-    // 2. Remove card from player's hand
-    const cardIndex = room.hands[socket.id].findIndex(c => c.code === cardCode);
-    if (cardIndex === -1) {
-      socket.emit("errorMessage", "Card not in hand");
-      return;
-    }
-    const [playedCard] = room.hands[socket.id].splice(cardIndex, 1);
+  // Determine next player
+  const nonHostPlayers = room.players.filter(p => p.id !== room.host);
+  const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
+  const nextIndex = (currentIndex + 1) % nonHostPlayers.length;
+  room.currentTurn = nonHostPlayers[nextIndex].id;
 
-    // 3. Add card to host's hand (or host's discard pile)
-    if (!room.hands[room.host]) room.hands[room.host] = [];
-    room.hands[room.host].push(playedCard);
-
-    const nonHostPlayers = room.players.filter(p => p.id !== room.host);
-    const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
-    const nextIndex = (currentIndex + 1) % nonHostPlayers.length;
-    room.currentTurn = nonHostPlayers[nextIndex].id;
-
-
-    // 4. Broadcast updated game state
-    io.to(roomCode).emit("gameState", {
-      topCard: playedCard, // the last card played
-      hands: room.hands,
-    });
-    // 5. Emit currentTurn
-    io.to(roomCode).emit("turnUpdate", {
-      currentTurn: room.currentTurn,
-    });
-    
+  // Broadcast game state
+  io.to(roomCode).emit("gameState", {
+    topCard: playedCard,
+    hands: room.hands,
+    currentSuit: room.currentSuit,
   });
+
+  io.to(roomCode).emit("turnUpdate", { currentTurn: room.currentTurn });
+});
+
+
 
     // Player draws a card
   socket.on("drawCard", async ({ roomCode }) => {

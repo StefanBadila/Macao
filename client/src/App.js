@@ -39,7 +39,7 @@ function App() {
   const [hostCounts, setHostCounts] = useState([]);
   const [hostHand, setHostHand] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
-
+  const [currentSuit, setCurrentSuit] = useState(null); 
   // Socket listeners
   useEffect(() => {
     socket.on("roomCreated", (code) => {
@@ -56,7 +56,7 @@ function App() {
     socket.on("errorMessage", (msg) => {
       alert(msg)
       setPlayerName("");
-      setJoined(false);
+      //setJoined(false);
     });
 
 
@@ -73,7 +73,7 @@ function App() {
       setCurrentTurn(currentTurn);
     });
 
-    socket.on("gameState", ({ topCard, hands }) => {
+    socket.on("gameState", ({ topCard, hands, currentSuit: suitFromServer }) => {
       
       const hostId = players[0]?.id; // safe check for host
       if (isHost) {
@@ -93,8 +93,11 @@ function App() {
         // Update only this player's hand
         setPlayerHand(hands[socket.id] || []);
       }
+      // Update currentSuit
+      if (suitFromServer) setCurrentSuit(suitFromServer);
       console.log("Top card:", topCard);
       console.log("Hands:", hands);
+      
     });
     socket.on("turnUpdate", ({ currentTurn }) => {
       setCurrentTurn(currentTurn);
@@ -121,10 +124,10 @@ function App() {
 
   // Start game (host only)
   const startGame = () => {
-    if (players.length < 2) {
-      alert("At least 2 players are required to start the game!");
-      return;
-    }
+    // if (players.length < 2) {
+    //   alert("At least 2 players are required to start the game!");
+    //   return;
+    // }
     socket.emit("startGame", { roomCode });
   };
 
@@ -171,10 +174,11 @@ function App() {
           roomCode={roomCode}
           players={players}
           currentTurn={currentTurn}
+          currentSuit = {currentSuit ?? null}
         />
 )}
       {gameStarted && !isHost && (
-        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} />
+        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} topCard={hostHand[hostHand.length-1]} />
       )}
     </div>
   );

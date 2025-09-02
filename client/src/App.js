@@ -40,8 +40,33 @@ function App() {
   const [hostHand, setHostHand] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
   const [currentSuit, setCurrentSuit] = useState(null); 
+  const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState(null);
+  const [stackedFours,setStackedFours] = useState(0);
+  const [stackedDraw,setStackedDraw] = useState(0);
   // Socket listeners
   useEffect(() => {
+
+    socket.on("gameOver", ({ winner }) => {
+    setGameOver(true);
+    setWinner(winner);
+    alert(`${winner} has won the game!`);
+  });
+
+    socket.on("newRoom", ({ roomCode, players }) => {
+    setRoomCode(roomCode);
+    setGameStarted(false);
+    setPlayerHand([]);
+    setHostHand([]);
+    setHostCounts([]);
+    setCurrentTurn(null);
+    setCurrentSuit(null);
+    setGameOver(false);
+    setPlayers(players || []);
+
+  });
+
+
     socket.on("roomCreated", (code) => {
       setRoomCode(code);
       setIsHost(true);
@@ -97,10 +122,16 @@ function App() {
       if (suitFromServer) setCurrentSuit(suitFromServer);
       console.log("Top card:", topCard);
       console.log("Hands:", hands);
-      
+      socket.emit("checkTurn", { roomCode });
     });
     socket.on("turnUpdate", ({ currentTurn }) => {
       setCurrentTurn(currentTurn);
+    });
+    socket.on("stackedFoursUpdate", ({ stackedFours }) => {
+      setStackedFours(stackedFours);
+    });
+    socket.on("stackedDrawUpdate", ({ stackedDraw }) => {
+      setStackedDraw(stackedDraw);  
     });
 
 
@@ -112,8 +143,12 @@ function App() {
       socket.off("gameStartedPlayer");
       socket.off("gameState");
       socket.off("currentTurn");
+      socket.off("gameOver");
+      socket.off("newRoom");
+      socket.off("stackedFours");
+      socket.off("stackedDraw");
     };
-  }, [isHost, players]);
+  }, [isHost, players, playerName,roomCode]);
 
 
   // Create / join room
@@ -175,10 +210,11 @@ function App() {
           players={players}
           currentTurn={currentTurn}
           currentSuit = {currentSuit ?? null}
+          gameOver={gameOver}
         />
 )}
       {gameStarted && !isHost && (
-        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} topCard={hostHand[hostHand.length-1]} />
+        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} topCard={hostHand[hostHand.length-1]} gameOver={gameOver} stackedFours={stackedFours} stackedDraw={stackedDraw} />
       )}
     </div>
   );

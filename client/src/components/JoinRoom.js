@@ -1,6 +1,13 @@
 import React, { useRef, useEffect } from "react";
 
-function JoinRoom({ roomCode, setRoomCode, playerName, setPlayerName, joinRoom, focusNameInput }) {
+function JoinRoom({ 
+  roomCode, 
+  setRoomCode, 
+  playerName, 
+  setPlayerName, 
+  joinRoom, 
+  focusNameInput 
+}) {
   const nameInputRef = useRef(null);
 
   useEffect(() => {

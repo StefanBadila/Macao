@@ -24,7 +24,7 @@ function ActionButtons({
     border: "none",
     cursor: "pointer",
     color: "white",
-    margin: "6px 0", // center buttons
+    margin: "6px 0", 
     display: "block",
   };
 

@@ -35,34 +35,19 @@ function giveFirstTwoPlayersTwosAndThrees(roomCode) {
   nonHostPlayers.slice(0, 2).forEach((player, index) => {
     if (!room.hands[player.id]) room.hands[player.id] = [];
 
-    const twoCard = { code: `2H-${Date.now() + index * 2}`, value: "2", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/2H.png" };
-    const threeCard = { code: `3H-${Date.now() + index * 2 + 1}`, value: "3", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/3H.png" };
-    const aceCard = { 
-  code: `AH-${Date.now() + index * 2 + 2}`, 
-  value: "ACE", 
-  suit: "HEARTS", 
-  image: "https://deckofcardsapi.com/static/img/AH.png" 
-};
-const jokerCard = {
-  code: `JOKER-${Date.now() + index * 2 + 2}`,
-  value: "JOKER",
-  suit: "RED", // or "RED"
-  image: "https://deckofcardsapi.com/static/img/XX.png"
-};
-
-
-    const fours = [
+  const twoCard = { code: `2H-${Date.now() + index * 2}`, value: "2", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/2H.png" };
+  const threeCard = { code: `3H-${Date.now() + index * 2 + 1}`, value: "3", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/3H.png" };
+  const aceCard = { code: `AH-${Date.now() + index * 2 + 2}`, value: "ACE", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/AH.png" };  
+  const jokerCard = { code: `JOKER-${Date.now() + index * 2 + 2}`,value: "JOKER", suit: "RED", image: "https://deckofcardsapi.com/static/img/XX.png"};
+  const fours = [
   { code: `4H-${Date.now()}`, value: "4", suit: "HEARTS", image: "https://deckofcardsapi.com/static/img/4H.png" },
   { code: `4D-${Date.now() + 1}`, value: "4", suit: "DIAMONDS", image: "https://deckofcardsapi.com/static/img/4D.png" },
   { code: `4S-${Date.now() + 2}`, value: "4", suit: "SPADES", image: "https://deckofcardsapi.com/static/img/4S.png" }
 ];
-
-room.hands[player.id].push(...fours);
+  room.hands[player.id].push(...fours);
     room.hands[player.id].push(twoCard, threeCard,aceCard,jokerCard);
-
     console.log(`Added 2 and 3 to ${player.name}`);
   });
-
   // Broadcast updated game state
   io.to(roomCode).emit("gameState", {
     topCard: room.hands[room.host][room.hands[room.host].length - 1],
@@ -90,17 +75,17 @@ app.get("/api/lan-ip", (req, res) => {
 });
 
 // --- Game Logic ---
+
+
 function checkWinCondition(roomCode, playerId) {
   const room = rooms[roomCode];
   if (!room) return;
-
   if (room.hands[playerId] && room.hands[playerId].length === 0) {
     const winner = room.players.find(p => p.id === playerId);
     room.gameOver = true;
     io.to(roomCode).emit("gameOver", {
       winner: winner?.name || "Unknown Player"
     });
-
     console.log(` Player ${winner?.name} won in room ${roomCode}`);
 
     // Create a new room and move all players
@@ -147,28 +132,26 @@ function getNextPlayer(roomCode, currentPlayerId) {
   if (currentIndex === -1) return null;
 
   let nextPlayerId = null;
-  let checked = 0; // safety to avoid infinite loop
+  let checked = 0; 
 
   while (nextPlayerId === null && checked < nonHostPlayers.length) {
     checked++;
     const nextIndex = (currentIndex + checked) % nonHostPlayers.length;
     const candidate = nonHostPlayers[nextIndex];
 
-    // Decrement skipTurnCounter if player must skip
     if (candidate.skipTurnCounter > 1) {
       candidate.skipTurnCounter -= 1;
       console.log(`${candidate.name} skips, remaining counter: ${candidate.skipTurnCounter}`);
       continue;
     }
 
-    // Check if player can play normally
     if (canPlayerPlay(roomCode, candidate.id)) {
       nextPlayerId = candidate.id;
       break;
     }
   }
 
-  // fallback: pick the very next player if none can play
+  // safe 
   if (!nextPlayerId) {
     const fallbackIndex = (currentIndex + 1) % nonHostPlayers.length;
     nextPlayerId = nonHostPlayers[fallbackIndex].id;
@@ -192,19 +175,19 @@ function canPlayerPlay(roomCode, playerId) {
     return true;
   }
 
-  // If stackedFours rule is active → must play a 4
+  // If stackedFours rule is active => must play a 4
   if (room.stackedFours > 0) {
     const hasFour = playerHand.some(c => c.value === "4");
     if (!hasFour) {
-      // Player cannot play → assign skipTurnCounter the stackedFours value
+      // Player cannot play => assign skipTurnCounter the stackedFours value
       player.skipTurnCounter = room.stackedFours-1;
-      room.stackedFours = 0; // reset after assigning
+      room.stackedFours = 0; 
       return false;
     }
     return true; // player has a 4, can play
   }
 
-  // If stackedDraw rule is active → must play 2,3 or Joker
+  // If stackedDraw rule is active => must play 2,3 or Joker
   if (room.stackedDraw > 0) {
     return playerHand.some(c => c.value === "2" || c.value === "3" || c.value === "JOKER");
   }
@@ -221,10 +204,10 @@ async function refillDeckIfEmpty(room) {
       // Take host hand minus the top card
       const hostHand = room.hands[room.host];
       if (!hostHand || hostHand.length <= 1) return;
-
       const topCard = hostHand[hostHand.length - 1];
       const cardsToReturn = hostHand.slice(0, hostHand.length - 1);
       const codesToReturn = cardsToReturn.map(c => c.code).join(',');
+
       // Return cards to deck
       await axios.get(`https://deckofcardsapi.com/api/deck/${room.deckId}/return/?cards=${codesToReturn}`);
 
@@ -267,6 +250,8 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "Room not found");
       return;
     }
+
+    // Check if name is already in room
     const nameExists = rooms[roomCode].players.some(
       (p) => p.name.toLowerCase() === playerName.toLowerCase()
     );
@@ -286,10 +271,11 @@ io.on("connection", (socket) => {
     if (!room || socket.id !== room.host) return;
 
     const firstPlayer = room.players.find(p => p.id !== room.host);
-    room.currentTurn = firstPlayer ? firstPlayer.id : room.host;
+    room.currentTurn = firstPlayer ? firstPlayer.id : null;
 
     try {
-      const deckRes = await axios.get("https://deckofcardsapi.com/api/deck/new/shuffle/?deck_count=1&jokers_enabled=true");
+      const deckRes = await axios.get(
+        "https://deckofcardsapi.com/api/deck/new/shuffle/?deck_count=1&jokers_enabled=true");
       const deckId = deckRes.data.deck_id;
       room.deckId = deckId;
 
@@ -302,20 +288,29 @@ io.on("connection", (socket) => {
 
       const cards = drawRes.data.cards; 
       let hostCard = cards.shift(); 
+
+      // Check that the first card is not a special card
       while (isSpecialCard(hostCard)) { 
-        await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/return/?cards=${hostCard.code}`); 
-          const redrawRes = await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`); 
-          hostCard = redrawRes.data.cards[0]; 
-      } 
+        await axios.get(
+          `https://deckofcardsapi.com/api/deck/${deckId}/return/?cards=${hostCard.code}`); 
+        const redrawRes = await axios.get(
+            `https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`); 
+        hostCard = redrawRes.data.cards[0]; 
+      }
+
       room.hands[room.host] = [hostCard]; 
-      room.currentSuit = room.hands[room.host][0].suit; 
+      room.currentSuit = room.hands[room.host][0].suit;
+      
+      // Give players their 5 start cards
       room.players.forEach((player) => { 
       if (player.id !== room.host) { 
         room.hands[player.id] = [cards.shift(), cards.shift(), cards.shift(), cards.shift(), cards.shift()]; 
       } 
       });
 
+      // for test purpose
       //giveFirstTwoPlayersTwosAndThrees(roomCode);
+
       const counts = room.players.map((player) => ({
         id: player.id,
         name: player.id === room.host ? "Host" : player.name,
@@ -365,7 +360,7 @@ io.on("connection", (socket) => {
 
       const playedCard = room.hands[socket.id][cardIndex];
 
-      // --- FREE PLAY: skip normal rules if freePlayNextTurn is true ---
+      //  FREE PLAY: skip normal rules if freePlayNextTurn is true 
       if (!player.freePlayNextTurn) {
         if (playedCard.value !== "ACE" && playedCard.value !== "JOKER") {
           // Normal draw/four rules
@@ -380,7 +375,7 @@ io.on("connection", (socket) => {
             return socket.emit("errorMessage", "Invalid move: must match suit or rank of top card");
           }
         } else if (playedCard.value === "ACE") {
-          // Ace rules (as before)
+          // Ace rules 
           if (room.stackedDraw > 0 || room.stackedFours > 0) {
             return socket.emit("errorMessage", "You cannot play an Ace to stop a draw chain!");
           }
@@ -394,7 +389,7 @@ io.on("connection", (socket) => {
           }
         }
       } else {
-        // --- Player is on free play turn, any card is allowed ---
+        // Player is on free play turn, any card is allowed 
         // Reset freePlayNextTurn after playing
         player.freePlayNextTurn = false;
       }
@@ -403,7 +398,7 @@ io.on("connection", (socket) => {
       if (!room.hands[room.host]) room.hands[room.host] = [];
       room.hands[room.host].push(playedCard);
 
-      // --- Update penalties ---
+      //  Update penalties
       if (playedCard.value === "4") {
         room.stackedFours += 1;
         room.stackedDraw = 0;
@@ -421,7 +416,6 @@ io.on("connection", (socket) => {
         room.stackedFours = 0;
         room.stackedDraw = 0;
       }
-
       topCard = playedCard;
     }
 

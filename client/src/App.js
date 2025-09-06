@@ -18,7 +18,6 @@ function useQuery() {
 function App() {
   const query = useQuery();
   const roomFromQR = query.get("room");
-
   const [roomCode, setRoomCode] = useState(roomFromQR || null);
   const [players, setPlayers] = useState([]);
   const [playerName, setPlayerName] = useState("");
@@ -44,6 +43,8 @@ function App() {
   const [winner, setWinner] = useState(null);
   const [stackedFours,setStackedFours] = useState(0);
   const [stackedDraw,setStackedDraw] = useState(0);
+
+
   // Socket listeners
   useEffect(() => {
 
@@ -63,9 +64,7 @@ function App() {
     setCurrentSuit(null);
     setGameOver(false);
     setPlayers(players || []);
-
   });
-
 
     socket.on("roomCreated", (code) => {
       setRoomCode(code);
@@ -78,12 +77,11 @@ function App() {
       setJoined(true);
     }
     });
+
     socket.on("errorMessage", (msg) => {
       alert(msg)
       setPlayerName("");
-      //setJoined(false);
     });
-
 
     socket.on("gameStartedHost", ({ counts, hostHand, currentTurn }) => {
       setGameStarted(true);
@@ -100,11 +98,12 @@ function App() {
 
     socket.on("gameState", ({ topCard, hands, currentSuit: suitFromServer }) => {
       
-      const hostId = players[0]?.id; // safe check for host
+      const hostId = players[0].id; 
       if (isHost) {
         // Update host hand
         if (hands[hostId]) 
           setHostHand(hands[hostId]);
+
           // Update counts for all players
           setHostCounts(
             Object.keys(hands).map((id) => ({
@@ -118,22 +117,23 @@ function App() {
         // Update only this player's hand
         setPlayerHand(hands[socket.id] || []);
       }
+
       // Update currentSuit
       if (suitFromServer) setCurrentSuit(suitFromServer);
-      console.log("Top card:", topCard);
-      console.log("Hands:", hands);
       socket.emit("checkTurn", { roomCode });
     });
+
     socket.on("turnUpdate", ({ currentTurn }) => {
       setCurrentTurn(currentTurn);
     });
+
     socket.on("stackedFoursUpdate", ({ stackedFours }) => {
       setStackedFours(stackedFours);
     });
+
     socket.on("stackedDrawUpdate", ({ stackedDraw }) => {
       setStackedDraw(stackedDraw);  
     });
-
 
     return () => {
       socket.off("roomCreated");
@@ -215,9 +215,18 @@ function App() {
           stackedFours={stackedFours} 
           stackedDraw={stackedDraw}
         />
-)}
+      )}
+      
       {gameStarted && !isHost && (
-        <PlayerGameView hand={playerHand} roomCode={roomCode} currentTurn={currentTurn} players={players} topCard={hostHand[hostHand.length-1]} gameOver={gameOver} stackedFours={stackedFours} stackedDraw={stackedDraw} />
+        <PlayerGameView 
+        hand={playerHand} 
+        roomCode={roomCode} 
+        currentTurn={currentTurn} 
+        players={players} 
+        topCard={hostHand[hostHand.length-1]} 
+        gameOver={gameOver} 
+        stackedFours={stackedFours} 
+        stackedDraw={stackedDraw} />
       )}
     </div>
   );

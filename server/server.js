@@ -137,6 +137,46 @@ function checkWinCondition(roomCode, playerId) {
   }
 }
 
+function getNextPlayer(roomCode, currentPlayerId) {
+  const room = rooms[roomCode];
+  if (!room) return null;
+
+  const nonHostPlayers = room.players.filter(p => p.id !== room.host);
+  const currentIndex = nonHostPlayers.findIndex(p => p.id === currentPlayerId);
+
+  if (currentIndex === -1) return null;
+
+  let nextPlayerId = null;
+  let checked = 0; // safety to avoid infinite loop
+
+  while (nextPlayerId === null && checked < nonHostPlayers.length) {
+    checked++;
+    const nextIndex = (currentIndex + checked) % nonHostPlayers.length;
+    const candidate = nonHostPlayers[nextIndex];
+
+    // Decrement skipTurnCounter if player must skip
+    if (candidate.skipTurnCounter > 1) {
+      candidate.skipTurnCounter -= 1;
+      console.log(`${candidate.name} skips, remaining counter: ${candidate.skipTurnCounter}`);
+      continue;
+    }
+
+    // Check if player can play normally
+    if (canPlayerPlay(roomCode, candidate.id)) {
+      nextPlayerId = candidate.id;
+      break;
+    }
+  }
+
+  // fallback: pick the very next player if none can play
+  if (!nextPlayerId) {
+    const fallbackIndex = (currentIndex + 1) % nonHostPlayers.length;
+    nextPlayerId = nonHostPlayers[fallbackIndex].id;
+  }
+
+  return nextPlayerId;
+}
+
 function canPlayerPlay(roomCode, playerId) {
   const room = rooms[roomCode];
   if (!room) return false;
@@ -152,30 +192,12 @@ function canPlayerPlay(roomCode, playerId) {
     return true;
   }
 
-  if (player.skipTurnCounter > 0){
-    player.skipTurnCounter -= 1;
-    return false;
-  }
-
-  if (player.voluntarySkip) {
-    // Assign skipTurnCounter if stackedFours is active
-    if (room.stackedFours > 0) {
-      player.skipTurnCounter = room.stackedFours;
-      room.stackedFours = 0;
-    } else {
-      player.skipTurnCounter -= 1;
-    }
-    player.voluntarySkip = false;
-    return false;
-  }
-
-
   // If stackedFours rule is active → must play a 4
   if (room.stackedFours > 0) {
     const hasFour = playerHand.some(c => c.value === "4");
     if (!hasFour) {
       // Player cannot play → assign skipTurnCounter the stackedFours value
-      player.skipTurnCounter = room.stackedFours;
+      player.skipTurnCounter = room.stackedFours-1;
       room.stackedFours = 0; // reset after assigning
       return false;
     }
@@ -189,6 +211,35 @@ function canPlayerPlay(roomCode, playerId) {
 
   return true;
 }
+
+async function refillDeckIfEmpty(room) {
+  try {
+    // Check how many cards are left
+    const deckRes = await axios.get(`https://deckofcardsapi.com/api/deck/${room.deckId}`);
+    const remaining = deckRes.data.remaining || 0;
+    if (remaining === 0) {
+      // Take host hand minus the top card
+      const hostHand = room.hands[room.host];
+      if (!hostHand || hostHand.length <= 1) return;
+
+      const topCard = hostHand[hostHand.length - 1];
+      const cardsToReturn = hostHand.slice(0, hostHand.length - 1);
+      const codesToReturn = cardsToReturn.map(c => c.code).join(',');
+      // Return cards to deck
+      await axios.get(`https://deckofcardsapi.com/api/deck/${room.deckId}/return/?cards=${codesToReturn}`);
+
+      // Shuffle deck
+      await axios.get(`https://deckofcardsapi.com/api/deck/${room.deckId}/shuffle/`);
+
+      // Remove returned cards from host hand (keep top card)
+      room.hands[room.host] = [topCard];
+      console.log(`Deck refilled and shuffled with host hand minus top card`);
+    }
+  } catch (err) {
+    console.error("Error refilling deck:", err);
+  }
+}
+
 
 // --- Socket.IO ---
 io.on("connection", (socket) => {
@@ -243,31 +294,28 @@ io.on("connection", (socket) => {
       room.deckId = deckId;
 
       const nonHostCount = room.players.filter(p => p.id !== room.host).length;
-      const totalCards = 1 + nonHostCount * 2;
+      const totalCards = 1 + 5*nonHostCount;
 
       const drawRes = await axios.get(
         `https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=${totalCards}`
       );
-      const cards = drawRes.data.cards;
 
-      let hostCard = cards.shift();
-      while (isSpecialCard(hostCard)) {
-        await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/return/?cards=${hostCard.code}`);
-        const redrawRes = await axios.get(
-          `https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`
-        );
-        hostCard = redrawRes.data.cards[0];
-      }
-
-      room.hands[room.host] = [hostCard];
-      room.currentSuit = room.hands[room.host][0].suit;
-
-      room.players.forEach((player) => {
-        if (player.id !== room.host) {
-          room.hands[player.id] = [cards.shift(), cards.shift()];
-        }
+      const cards = drawRes.data.cards; 
+      let hostCard = cards.shift(); 
+      while (isSpecialCard(hostCard)) { 
+        await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/return/?cards=${hostCard.code}`); 
+          const redrawRes = await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`); 
+          hostCard = redrawRes.data.cards[0]; 
+      } 
+      room.hands[room.host] = [hostCard]; 
+      room.currentSuit = room.hands[room.host][0].suit; 
+      room.players.forEach((player) => { 
+      if (player.id !== room.host) { 
+        room.hands[player.id] = [cards.shift(), cards.shift(), cards.shift(), cards.shift(), cards.shift()]; 
+      } 
       });
-      giveFirstTwoPlayersTwosAndThrees(roomCode);
+
+      //giveFirstTwoPlayersTwosAndThrees(roomCode);
       const counts = room.players.map((player) => ({
         id: player.id,
         name: player.id === room.host ? "Host" : player.name,
@@ -382,23 +430,7 @@ io.on("connection", (socket) => {
 
     if (checkWinCondition(roomCode, socket.id)) return;
 
-    const nonHostPlayers = room.players.filter(p => p.id !== room.host);
-    const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
-    let nextPlayerId;
-
-    for (let i = 1; i <= nonHostPlayers.length; i++) {
-      const nextIndex = (currentIndex + i) % nonHostPlayers.length;
-      const candidateId = nonHostPlayers[nextIndex].id;
-      if (canPlayerPlay(roomCode, candidateId)) {
-        nextPlayerId = candidateId;
-        break;
-      }
-    }
-    if (!nextPlayerId) {
-      nextPlayerId = nonHostPlayers[(currentIndex + 1) % nonHostPlayers.length].id;
-    }
-
-    room.currentTurn = nextPlayerId;
+    room.currentTurn = getNextPlayer(roomCode, player.id)
 
     io.to(roomCode).emit("gameState", {
       topCard: lastCard,
@@ -423,14 +455,21 @@ io.on("connection", (socket) => {
     if (room.gameOver) return;
 
     try {
+
+      // Refill deck if empty
+      await refillDeckIfEmpty(room);
+
       let drawCount = 1;
       if (room.stackedDraw > 0) {
         drawCount = room.stackedDraw;
 
-        const nonHostPlayers = room.players.filter(p => p.id !== room.host);
-        const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
-        const nextIndex = (currentIndex + 1) % nonHostPlayers.length;
-        nonHostPlayers[nextIndex].freePlayNextTurn = true;
+        let topCard = room.hands[room.host][room.hands[room.host].length - 1];
+        if(topCard.value === "JOKER"){
+          const nonHostPlayers = room.players.filter(p => p.id !== room.host);
+          const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
+          const nextIndex = (currentIndex + 1) % nonHostPlayers.length;
+          nonHostPlayers[nextIndex].freePlayNextTurn = true;
+        }
 
         room.stackedDraw = 0;
       }
@@ -443,10 +482,8 @@ io.on("connection", (socket) => {
       if (!room.hands[socket.id]) room.hands[socket.id] = [];
       room.hands[socket.id].push(...drawnCards);
 
-      const nonHostPlayers = room.players.filter(p => p.id !== room.host);
-      const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
-      const nextIndex = (currentIndex + 1) % nonHostPlayers.length;
-      room.currentTurn = nonHostPlayers[nextIndex].id;
+      const player = room.players.find(p => p.id === socket.id);
+      room.currentTurn = getNextPlayer(roomCode, player.id)
 
       io.to(roomCode).emit("gameState", {
         topCard: room.hands[room.host][room.hands[room.host].length - 1],
@@ -470,26 +507,10 @@ io.on("connection", (socket) => {
     if (!player) return socket.emit("errorMessage", "You are not in this room");
     if (room.currentTurn !== socket.id) return socket.emit("errorMessage", "Not your turn!");
 
-    player.voluntarySkip = true;
-
-    const nonHostPlayers = room.players.filter(p => p.id !== room.host);
-    const currentIndex = nonHostPlayers.findIndex(p => p.id === socket.id);
-    let nextPlayerId;
-
-    for (let i = 1; i <= nonHostPlayers.length; i++) {
-      const nextIndex = (currentIndex + i) % nonHostPlayers.length;
-      const candidateId = nonHostPlayers[nextIndex].id;
-      if (canPlayerPlay(roomCode, candidateId)) {
-        nextPlayerId = candidateId;
-        break;
-      }
-    }
-    if (!nextPlayerId) {
-      nextPlayerId = nonHostPlayers[(currentIndex + 1) % nonHostPlayers.length].id;
-    }
-
-    room.currentTurn = nextPlayerId;
+    player.skipTurnCounter = room.stackedFours-1;
     room.stackedFours = 0;
+
+    room.currentTurn = getNextPlayer(roomCode, player.id)
 
     io.to(roomCode).emit("turnUpdate", { currentTurn: room.currentTurn });
     io.to(roomCode).emit("stackedFoursUpdate", { stackedFours: room.stackedFours });

@@ -159,16 +159,16 @@ function App() {
 
   // Start game (host only)
   const startGame = () => {
-    // if (players.length < 2) {
-    //   alert("At least 2 players are required to start the game!");
-    //   return;
-    // }
+    if (players.length < 2) {
+       alert("At least 2 players are required to start the game!");
+       return;
+      }
     socket.emit("startGame", { roomCode });
   };
 
   return (
     <div style={{ padding: 20 }}>
-      <h1>Macao MVP</h1>
+      <h1 style={{textAlign:"center"}}>Macao</h1>
       {/* Room creation */}
       {!roomCode && <RoomControl createRoom={createRoom} />}
 
@@ -179,6 +179,7 @@ function App() {
           lanIp={lanIp}
           players={players}
           startGame={startGame}
+          
         />
       )}
 
@@ -211,6 +212,8 @@ function App() {
           currentTurn={currentTurn}
           currentSuit = {currentSuit ?? null}
           gameOver={gameOver}
+          stackedFours={stackedFours} 
+          stackedDraw={stackedDraw}
         />
 )}
       {gameStarted && !isHost && (

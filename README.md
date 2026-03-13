@@ -32,8 +32,14 @@ The first user creates a room and becomes the Host. The Host sees the table over
 
 | File/folder | Description |
 |-------------|-------------|
-| `digitaltimer.kicad_sch`       | Schematic |
-| `digitaltimer.kicad_pcb`       | PCB editor |
-| `digitaltimer.kicad_pro`       | KiCad project file |
-| `digitaltimer.kicad_prl`       | KiCad project rules |
-| `README.md` | This README file. |
+| `client/src/App.js`       | React App |
+| `server/server.js`        | Server main file |
+
+# Photos
+<img width="570" height="737" alt="1" src="https://github.com/user-attachments/assets/47b7b80a-f250-4989-9c9e-fd21a71a5feb" />
+
+![2](https://github.com/user-attachments/assets/c13f977f-9177-44ef-82ef-01f6e78b336b)
+![3](https://github.com/user-attachments/assets/e4d4a291-e6dc-4d5d-8ac4-4a0087acaf4f)
+![4](https://github.com/user-attachments/assets/bf0e045e-700a-48a1-8f02-8b679533d19b)
+![5](https://github.com/user-attachments/assets/2c5f8fe2-48f0-405b-a3b2-8e7ecb20d016)
+
